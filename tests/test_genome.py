@@ -381,5 +381,94 @@ class TestPruning(unittest.TestCase):
         self.assertEqual(set(g_pruned.connections.keys()), {(-1, 0), (-2, 0)})
 
 
+class TestPruneMutation(unittest.TestCase):
+    """Tests for the prune mutation operator."""
+
+    def setUp(self):
+        """
+        Determine path to configuration file. This path manipulation is
+        here so that the script will run successfully regardless of the
+        current working directory.
+        """
+        local_dir = os.path.dirname(__file__)
+        config_path = os.path.join(local_dir, 'test_configuration')
+        self.config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                                  neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                                  config_path)
+        # Set prune probability to 1.0 to ensure it's always applied
+        self.config.genome_config.prune_prob = 1.0
+
+    def test_prune_mutation(self):
+        """Test that the prune mutation operator removes unused nodes and connections."""
+        gid = 42
+        config = self.config.genome_config
+        config.initial_connection = 'unconnected'
+        config.num_hidden = 0
+
+        # Create a genome with an unused node
+        g = neat.DefaultGenome(gid)
+        g.configure_new(config)
+
+        # Add a hidden node that's not connected to the output
+        new_node_id = config.get_new_node_key(g.nodes)
+        ng = g.create_node(config, new_node_id)
+        g.nodes[new_node_id] = ng
+
+        # Add connections: input to output and input to hidden node
+        g.add_connection(config, -1, 0, 1.0, True)
+        g.add_connection(config, -2, 0, 1.0, True)
+        g.add_connection(config, -1, new_node_id, 1.0, True)
+
+        # Verify the initial state
+        self.assertEqual(set(g.nodes.keys()), {0, new_node_id})
+        self.assertEqual(set(g.connections.keys()), {(-1, 0), (-2, 0), (-1, new_node_id)})
+
+        # Apply the prune mutation
+        g.mutate_prune(config)
+
+        # Verify that the unused node and its connection were removed
+        self.assertEqual(set(g.nodes.keys()), {0})
+        self.assertEqual(set(g.connections.keys()), {(-1, 0), (-2, 0)})
+
+    def test_prune_mutation_in_mutate(self):
+        """Test that the prune mutation is called from the mutate method."""
+        gid = 42
+        config = self.config.genome_config
+        config.initial_connection = 'unconnected'
+        config.num_hidden = 0
+        config.prune_prob = 1.0  # Ensure prune_prob is set to 1.0
+
+        # Create a genome with an unused node
+        g = neat.DefaultGenome(gid)
+        g.configure_new(config)
+
+        # Add a hidden node that's not connected to the output
+        new_node_id = config.get_new_node_key(g.nodes)
+        ng = g.create_node(config, new_node_id)
+        g.nodes[new_node_id] = ng
+
+        # Add connections: input to output and input to hidden node
+        g.add_connection(config, -1, 0, 1.0, True)
+        g.add_connection(config, -2, 0, 1.0, True)
+        g.add_connection(config, -1, new_node_id, 1.0, True)
+
+        # Verify the initial state
+        print("\nInitial state:")
+        print(f"Nodes: {set(g.nodes.keys())}")
+        print(f"Connections: {set(g.connections.keys())}")
+        self.assertEqual(set(g.nodes.keys()), {0, new_node_id})
+        self.assertEqual(set(g.connections.keys()), {(-1, 0), (-2, 0), (-1, new_node_id)})
+
+        # Apply the mutate method with prune_prob = 1.0
+        g.mutate(config)
+
+        # Verify that the unused node and its connection were removed
+        print("\nAfter mutation:")
+        print(f"Nodes: {set(g.nodes.keys())}")
+        print(f"Connections: {set(g.connections.keys())}")
+        self.assertEqual(set(g.nodes.keys()), {0})
+        self.assertEqual(set(g.connections.keys()), {(-1, 0), (-2, 0)})
+
+
 if __name__ == '__main__':
     unittest.main()

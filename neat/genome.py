@@ -35,6 +35,7 @@ class DefaultGenomeConfig(object):
                         ConfigParameter('conn_delete_prob', float),
                         ConfigParameter('node_add_prob', float),
                         ConfigParameter('node_delete_prob', float),
+                        ConfigParameter('prune_prob', float, '0.0'),
                         ConfigParameter('single_structural_mutation', bool, 'false'),
                         ConfigParameter('structural_mutation_surer', str, 'default'),
                         ConfigParameter('initial_connection', str, 'unconnected')]
@@ -266,7 +267,8 @@ class DefaultGenome(object):
 
         if config.single_structural_mutation:
             div = max(1, (config.node_add_prob + config.node_delete_prob +
-                          config.conn_add_prob + config.conn_delete_prob))
+                          config.conn_add_prob + config.conn_delete_prob +
+                          config.prune_prob))
             r = random()
             if r < (config.node_add_prob / div):
                 self.mutate_add_node(config)
@@ -278,7 +280,12 @@ class DefaultGenome(object):
             elif r < ((config.node_add_prob + config.node_delete_prob +
                        config.conn_add_prob + config.conn_delete_prob) / div):
                 self.mutate_delete_connection()
+            elif r < ((config.node_add_prob + config.node_delete_prob +
+                       config.conn_add_prob + config.conn_delete_prob + 
+                       config.prune_prob) / div):
+                self.mutate_prune(config)
         else:
+            # Apply structural mutations with their respective probabilities
             if random() < config.node_add_prob:
                 self.mutate_add_node(config)
 
@@ -290,6 +297,10 @@ class DefaultGenome(object):
 
             if random() < config.conn_delete_prob:
                 self.mutate_delete_connection()
+                
+            # Apply prune mutation with its probability
+            if random() < config.prune_prob:
+                self.mutate_prune(config)
 
         # Mutate connection genes.
         for cg in self.connections.values():
@@ -390,6 +401,60 @@ class DefaultGenome(object):
         if self.connections:
             key = choice(list(self.connections.keys()))
             del self.connections[key]
+
+    def mutate_prune(self, config):
+        """
+        Prune the genome by removing nodes and connections that are not required for the output.
+        This is similar to the Java implementation's PruneMutationOperator.
+        """
+        print("\nIn mutate_prune:")
+        # Get the list of connections as (input, output) tuples
+        connection_list = [(k[0], k[1]) for k in self.connections.keys()]
+        print(f"Connection list: {connection_list}")
+        
+        # Find the required nodes for the output
+        required_nodes = required_for_output(config.input_keys, config.output_keys, connection_list)
+        print(f"Required nodes from required_for_output: {required_nodes}")
+        
+        # Add input nodes to required nodes (they are always required)
+        required_nodes = required_nodes.union(config.input_keys)
+        required_nodes = required_nodes.union(config.output_keys)  # Output nodes are also required
+        print(f"Required nodes after adding inputs and outputs: {required_nodes}")
+        
+        # Find nodes to remove (nodes that are not required)
+        nodes_to_remove = [node_id for node_id in self.nodes if node_id not in required_nodes]
+        print(f"Nodes to remove: {nodes_to_remove}")
+        
+        # Remove nodes that are not required
+        for node_id in nodes_to_remove:
+            # Find and remove all connections involving this node
+            connections_to_remove = []
+            for conn_key in self.connections:
+                if node_id in conn_key:
+                    connections_to_remove.append(conn_key)
+            
+            print(f"Removing connections for node {node_id}: {connections_to_remove}")
+            for conn_key in connections_to_remove:
+                del self.connections[conn_key]
+            
+            # Remove the node
+            del self.nodes[node_id]
+        
+        # Remove any connections that are not between required nodes
+        connections_to_remove = []
+        for conn_key in self.connections:
+            in_node, out_node = conn_key
+            if in_node not in required_nodes or out_node not in required_nodes:
+                connections_to_remove.append(conn_key)
+        
+        print(f"Additional connections to remove: {connections_to_remove}")
+        for conn_key in connections_to_remove:
+            del self.connections[conn_key]
+        
+        print(f"Final nodes: {set(self.nodes.keys())}")
+        print(f"Final connections: {set(self.connections.keys())}")
+        
+        return len(nodes_to_remove) > 0 or len(connections_to_remove) > 0
 
     def distance(self, other, config):
         """
